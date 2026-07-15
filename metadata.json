@@ -1,9 +1,9 @@
 {
   "uuid": "no-screenshot-box@screenshot",
   "name": "No Screenshot Box",
-  "description": "Disables the pre-selected region rectangle in the GNOME screenshot UI and always starts with an empty selection.",
+  "description": "Customizes the GNOME screenshot UI with an empty initial selection, optional capture on release, and an independent screenshot sound mute.",
   "url": "https://github.com/abdallah-alkanani/no-screenshot-box",
-  "shell-version": ["45", "46", "47", "48", "49"],
-  "version": 4,
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "version": 6,
   "settings-schema": "org.gnome.shell.extensions.no-screenshot-box"
 }

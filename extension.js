@@ -14,6 +14,7 @@ import {Extension, InjectionManager} from 'resource:///org/gnome/shell/extension
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const LOG_PREFIX = 'NoScreenshotBox';
+const SCREEN_CAPTURE_SOUND = 'screen-capture';
 const DEBUG_ENABLED = (() => {
     const debugEnv = GLib.getenv('G_MESSAGES_DEBUG') ?? '';
 
@@ -25,8 +26,11 @@ const DEBUG_ENABLED = (() => {
 class NoScreenshotBoxController {
     constructor(settings) {
         this._settings = settings;
+        this._removePreselectedBox = true;
         this._screenshotOnRelease = true;
-        this._injectionManager = null;
+        this._muteScreenshotSound = false;
+        this._areaInjectionManager = null;
+        this._soundInjectionManager = null;
         this._areaSelector = null;
         this._retryId = 0;
         this._selectionRectOpacity = null;
@@ -39,15 +43,31 @@ class NoScreenshotBoxController {
         this._attemptCount = 0;
         this._capturing = false;
         this._handleOpacities = new Map();
-        this._injectionManager = new InjectionManager();
+        this._areaInjectionManager = new InjectionManager();
+        this._soundInjectionManager = new InjectionManager();
 
         this._settings?.disconnectObject(this);
+        this._refreshRemovePreselectedBox();
         this._refreshScreenshotOnRelease();
+        this._refreshMuteScreenshotSound();
+        this._settings?.connectObject(
+            'changed::remove-preselected-box',
+            () => {
+                this._refreshRemovePreselectedBox();
+                if (this._areaSelector)
+                    this._applyPatch(this._areaSelector);
+            },
+            this);
         this._settings?.connectObject(
             'changed::screenshot-on-release',
             () => this._refreshScreenshotOnRelease(),
             this);
+        this._settings?.connectObject(
+            'changed::mute-screenshot-sound',
+            () => this._refreshMuteScreenshotSound(),
+            this);
 
+        this._patchSoundPlayer();
         this._patchWhenReady();
     }
 
@@ -58,9 +78,11 @@ class NoScreenshotBoxController {
         }
 
         this._restore();
+        this._soundInjectionManager?.clear();
         this._settings?.disconnectObject(this);
 
-        this._injectionManager = null;
+        this._areaInjectionManager = null;
+        this._soundInjectionManager = null;
         this._handleOpacities = null;
         this._selectionRectOpacity = null;
         this._capturing = false;
@@ -75,6 +97,40 @@ class NoScreenshotBoxController {
 
     _refreshScreenshotOnRelease() {
         this._screenshotOnRelease = this._settings?.get_boolean('screenshot-on-release') ?? true;
+    }
+
+    _refreshRemovePreselectedBox() {
+        this._removePreselectedBox = this._settings?.get_boolean('remove-preselected-box') ?? true;
+    }
+
+    _refreshMuteScreenshotSound() {
+        this._muteScreenshotSound =
+            this._settings?.get_boolean('mute-screenshot-sound') ?? false;
+    }
+
+    _patchSoundPlayer() {
+        const soundPlayer = global.display.get_sound_player();
+        const originalPlayFromTheme = soundPlayer?.play_from_theme;
+
+        if (!originalPlayFromTheme || !this._soundInjectionManager) {
+            this._log('Unable to find the screenshot sound player');
+            return;
+        }
+
+        const controller = this;
+        this._soundInjectionManager.overrideMethod(
+            soundPlayer,
+            'play_from_theme',
+            originalMethod => {
+                const playFromTheme = originalMethod.bind(soundPlayer);
+
+                return (name, ...args) => {
+                    if (name === SCREEN_CAPTURE_SOUND && controller._muteScreenshotSound)
+                        return;
+
+                    playFromTheme(name, ...args);
+                };
+            });
     }
 
     _patchWhenReady() {
@@ -110,37 +166,39 @@ class NoScreenshotBoxController {
 
             return GLib.SOURCE_CONTINUE;
         });
-        GLib.Source.set_name_by_id(this._retryId, '[no-screenshot-box] patchWhenReady');
     }
 
     _applyPatch(areaSelector) {
         this._restore();
         this._areaSelector = areaSelector;
 
-        if (areaSelector.reset && this._injectionManager) {
-            this._injectionManager.overrideMethod(areaSelector, 'reset', originalReset => (...args) => {
+        if (this._removePreselectedBox && areaSelector.reset && this._areaInjectionManager) {
+            this._areaInjectionManager.overrideMethod(areaSelector, 'reset', originalReset => (...args) => {
                 const result = originalReset?.apply(areaSelector, args);
                 this._clearSelection(areaSelector);
                 return result;
             });
-        } else {
+        } else if (this._removePreselectedBox) {
             this._log('Area selector has no reset(); clearing selection directly');
         }
 
-        // Show the rectangle only after the user actively starts a drag.
-        areaSelector.connectObject('drag-started',
-            () => this._revealSelection(areaSelector),
-            this);
+        if (this._removePreselectedBox) {
+            // Show the rectangle only after the user actively starts a drag.
+            areaSelector.connectObject('drag-started',
+                () => this._revealSelection(areaSelector),
+                this);
+        }
         areaSelector.connectObject('drag-ended',
             () => this._autoCapture(areaSelector),
             this);
 
-        this._clearSelection(areaSelector);
+        if (this._removePreselectedBox)
+            this._clearSelection(areaSelector);
         this._log('Patched screenshot selection reset');
     }
 
     _restore() {
-        this._injectionManager?.clear();
+        this._areaInjectionManager?.clear();
 
         if (!this._areaSelector)
             return;
@@ -262,10 +320,10 @@ class NoScreenshotBoxController {
 
         try {
             if (screenshotUI._saveScreenshot) {
-                await screenshotUI._saveScreenshot.call(screenshotUI);
+                await screenshotUI._saveScreenshot();
                 screenshotUI.close?.(true); // skip fade-out animation for speed
             } else if (screenshotUI._onCaptureButtonClicked) {
-                await screenshotUI._onCaptureButtonClicked.call(screenshotUI);
+                await screenshotUI._onCaptureButtonClicked();
             }
         } catch (error) {
             this._log(`Auto capture failed: ${error}`);

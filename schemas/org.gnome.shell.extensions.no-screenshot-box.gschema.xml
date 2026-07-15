@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
   <schema id="org.gnome.shell.extensions.no-screenshot-box" path="/org/gnome/shell/extensions/no-screenshot-box/">
+    <key name="remove-preselected-box" type="b">
+      <default>true</default>
+      <summary>Remove the pre-selected area box</summary>
+      <description>When enabled, the extension clears GNOME Screenshot's initial pre-selected region and starts with an empty selection.</description>
+    </key>
     <key name="screenshot-on-release" type="b">
       <default>true</default>
       <summary>Automatically capture area selection on mouse release</summary>
-      <description>When enabled, the extension triggers the screenshot capture as soon as the selection drag ends. Turn this off to only clear the pre-selected area without taking a screenshot automatically.</description>
+      <description>When enabled, the extension triggers the screenshot capture as soon as the selection drag ends.</description>
+    </key>
+    <key name="mute-screenshot-sound" type="b">
+      <default>false</default>
+      <summary>Mute the screenshot sound</summary>
+      <description>When enabled, the extension suppresses the screen-capture sound event without changing other system or application audio.</description>
     </key>
   </schema>
 </schemalist>
