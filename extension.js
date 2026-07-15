@@ -29,8 +29,7 @@ class NoScreenshotBoxController {
         this._removePreselectedBox = true;
         this._screenshotOnRelease = true;
         this._muteScreenshotSound = false;
-        this._areaInjectionManager = null;
-        this._soundInjectionManager = null;
+        this._injectionManager = null;
         this._areaSelector = null;
         this._retryId = 0;
         this._selectionRectOpacity = null;
@@ -43,8 +42,7 @@ class NoScreenshotBoxController {
         this._attemptCount = 0;
         this._capturing = false;
         this._handleOpacities = new Map();
-        this._areaInjectionManager = new InjectionManager();
-        this._soundInjectionManager = new InjectionManager();
+        this._injectionManager = new InjectionManager();
 
         this._settings?.disconnectObject(this);
         this._refreshRemovePreselectedBox();
@@ -78,11 +76,10 @@ class NoScreenshotBoxController {
         }
 
         this._restore();
-        this._soundInjectionManager?.clear();
+        this._injectionManager?.clear();
         this._settings?.disconnectObject(this);
 
-        this._areaInjectionManager = null;
-        this._soundInjectionManager = null;
+        this._injectionManager = null;
         this._handleOpacities = null;
         this._selectionRectOpacity = null;
         this._capturing = false;
@@ -112,13 +109,13 @@ class NoScreenshotBoxController {
         const soundPlayer = global.display.get_sound_player();
         const originalPlayFromTheme = soundPlayer?.play_from_theme;
 
-        if (!originalPlayFromTheme || !this._soundInjectionManager) {
+        if (!originalPlayFromTheme || !this._injectionManager) {
             this._log('Unable to find the screenshot sound player');
             return;
         }
 
         const controller = this;
-        this._soundInjectionManager.overrideMethod(
+        this._injectionManager.overrideMethod(
             soundPlayer,
             'play_from_theme',
             originalMethod => {
@@ -172,8 +169,8 @@ class NoScreenshotBoxController {
         this._restore();
         this._areaSelector = areaSelector;
 
-        if (this._removePreselectedBox && areaSelector.reset && this._areaInjectionManager) {
-            this._areaInjectionManager.overrideMethod(areaSelector, 'reset', originalReset => (...args) => {
+        if (this._removePreselectedBox && areaSelector.reset && this._injectionManager) {
+            this._injectionManager.overrideMethod(areaSelector, 'reset', originalReset => (...args) => {
                 const result = originalReset?.apply(areaSelector, args);
                 this._clearSelection(areaSelector);
                 return result;
@@ -198,13 +195,12 @@ class NoScreenshotBoxController {
     }
 
     _restore() {
-        this._areaInjectionManager?.clear();
-
         if (!this._areaSelector)
             return;
 
         const areaSelector = this._areaSelector;
 
+        this._injectionManager?.restoreMethod(areaSelector, 'reset');
         areaSelector.disconnectObject(this);
 
         const selectionRect = this._getSelectionRect(areaSelector);
