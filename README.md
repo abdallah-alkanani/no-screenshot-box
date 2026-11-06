@@ -4,7 +4,7 @@ No Screenshot Box customizes the GNOME Shell screenshot area selector.
 
 ## Compatibility
 
-GNOME Shell 45-50.
+GNOME Shell 45-51.
 
 ## Features
 

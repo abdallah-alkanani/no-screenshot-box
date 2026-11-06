@@ -107,25 +107,32 @@ class NoScreenshotBoxController {
 
     _patchSoundPlayer() {
         const soundPlayer = global.display.get_sound_player();
-        const originalPlayFromTheme = soundPlayer?.play_from_theme;
 
-        if (!originalPlayFromTheme || !this._injectionManager) {
+        if (!soundPlayer || !this._injectionManager) {
             this._log('Unable to find the screenshot sound player');
             return;
         }
 
-        const controller = this;
+        // GNOME Shell 45-50 play the capture sound by theme name, 51 by file.
+        const captureSoundPath = `${global.datadir}/sounds/${SCREEN_CAPTURE_SOUND}.oga`;
+        this._muteCaptureSound(soundPlayer, 'play_from_theme',
+            name => name === SCREEN_CAPTURE_SOUND);
+        this._muteCaptureSound(soundPlayer, 'play_from_file',
+            file => file.get_path() === captureSoundPath);
+    }
+
+    _muteCaptureSound(soundPlayer, methodName, isCaptureSound) {
         this._injectionManager.overrideMethod(
             soundPlayer,
-            'play_from_theme',
+            methodName,
             originalMethod => {
-                const playFromTheme = originalMethod.bind(soundPlayer);
+                const play = originalMethod.bind(soundPlayer);
 
-                return (name, ...args) => {
-                    if (name === SCREEN_CAPTURE_SOUND && controller._muteScreenshotSound)
+                return (sound, ...args) => {
+                    if (this._muteScreenshotSound && isCaptureSound(sound))
                         return;
 
-                    playFromTheme(name, ...args);
+                    play(sound, ...args);
                 };
             });
     }
