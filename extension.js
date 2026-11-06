@@ -113,7 +113,8 @@ class NoScreenshotBoxController {
             return;
         }
 
-        // GNOME Shell 45-50 play the capture sound by theme name, 51 by file.
+        // GNOME Shell 45-50 play the capture sound by theme name; 51+ use play_from_file.
+        // Both methods are patched for broad compatibility across all supported versions.
         const captureSoundPath = `${global.datadir}/sounds/${SCREEN_CAPTURE_SOUND}.oga`;
         this._muteCaptureSound(soundPlayer, 'play_from_theme',
             name => name === SCREEN_CAPTURE_SOUND);
@@ -232,8 +233,10 @@ class NoScreenshotBoxController {
     }
 
     _clearSelection(areaSelector) {
+        // Use -1 as the sentinel for "no selection": that is what UIAreaSelector._init
+        // sets and what reset() checks when deciding whether to call resetArea().
         if ('_startX' in areaSelector)
-            areaSelector._startX = 0;
+            areaSelector._startX = -1;
         if ('_startY' in areaSelector)
             areaSelector._startY = 0;
         if ('_lastX' in areaSelector)
@@ -241,11 +244,11 @@ class NoScreenshotBoxController {
         if ('_lastY' in areaSelector)
             areaSelector._lastY = 0;
 
-        areaSelector._updateSelectionRect?.();
-
         if (!this._handleOpacities)
             this._handleOpacities = new Map();
 
+        // Hide handles and selection rect before updating the visual rect so there
+        // is no flicker of the old selection on screen.
         for (const [name, actor] of this._getHandles(areaSelector)) {
             if (!actor)
                 continue;
@@ -263,6 +266,8 @@ class NoScreenshotBoxController {
 
             selectionRect.opacity = 0;
         }
+
+        areaSelector._updateSelectionRect?.();
     }
 
     _revealSelection(areaSelector) {
@@ -278,11 +283,14 @@ class NoScreenshotBoxController {
     }
 
     _getSelectionRect(areaSelector) {
+        // In GNOME Shell 51+, _selectionRect lives on the nested UIAreaIndicator object,
+        // not directly on UIAreaSelector. Check the correct path first, then fall back
+        // to the top-level field for any older shell versions that exposed it directly.
+        if (areaSelector._areaIndicator?._selectionRect)
+            return areaSelector._areaIndicator._selectionRect;
+
         if (areaSelector._selectionRect)
             return areaSelector._selectionRect;
-
-        if (areaSelector._areaIndicator?.['_selectionRect'])
-            return areaSelector._areaIndicator._selectionRect;
 
         return null;
     }
@@ -322,11 +330,15 @@ class NoScreenshotBoxController {
         this._capturing = true;
 
         try {
-            if (screenshotUI._saveScreenshot) {
-                await screenshotUI._saveScreenshot();
-                screenshotUI.close?.(true); // skip fade-out animation for speed
-            } else if (screenshotUI._onCaptureButtonClicked) {
+            // Prefer _onCaptureButtonClicked() because it already handles closing the
+            // UI after the screenshot. Calling _saveScreenshot() + close() separately
+            // risks a double-close on GNOME Shell 52+ where _onCaptureButtonClicked()
+            // itself calls close().
+            if (screenshotUI._onCaptureButtonClicked) {
                 await screenshotUI._onCaptureButtonClicked();
+            } else if (screenshotUI._saveScreenshot) {
+                await screenshotUI._saveScreenshot();
+                screenshotUI.close?.();
             }
         } catch (error) {
             this._log(`Auto capture failed: ${error}`);
